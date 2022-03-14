@@ -39,7 +39,8 @@ int FromPlaneToTetra(const Eigen::Matrix3d& inverse_transform_matrix, const Eige
 
 size_t IntersectionWithPlane(vtkCell* face, const Vector3& start_point, const Vector3& direction, Vector3& result);
 bool InTriangle(const int num_cell, const vtkSmartPointer<vtkUnstructuredGrid>& unstructuredgrid, vtkCell* cell_face, int number_face, const Eigen::Vector3d& XX);
-
+int IntersectionWithPlane(const Face& face, const Vector3& start_point, const Vector3& direction, Vector3& result);
+int InTriangle(int number_face, const Face& cell_face, const Normals& normals_cell, const Eigen::Vector3d& XX);
 Type BoundaryFunction(const int id_cell, const Vector3& x, const Vector3& direction, const std::vector<Type>& illum_old,
 	const vector<Vector3>& directions, const vector<Type>& squares);
 
@@ -54,4 +55,11 @@ Type IntegarteDirection(const int num_cell, const vector<Type>& Illum, const vec
 
 size_t WriteFileSolution(const std::string name_file_out, const std::vector<Type>& vector_illum, const std::vector<Type>& vector_energy,
 	vtkSmartPointer<vtkUnstructuredGrid>& u_grid);
+
+int ReadCellFaces(const std::string name_file_cells, std::vector<Face>& grid);
+
+int WriteCellFaces(const std::string name_file_cells, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid);
+
+int WriteVertex(const std::string name_file_vertex, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid);
+int ReadVertex(const std::string name_file_vertex, std::vector<Eigen::Matrix4d>& vertexs);
 #endif

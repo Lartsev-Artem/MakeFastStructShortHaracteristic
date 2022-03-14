@@ -1,1 +1,1 @@
-Time of iter: 17.1063
+Time of iter: 34.0314

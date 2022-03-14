@@ -179,6 +179,131 @@ int GetNodes(const int num_cur_cell, const vtkSmartPointer<vtkUnstructuredGrid>&
 	return 0;
 }
 
+int GetNodes(const int num_cur_cell, const std::vector<Face>& grid, const ShortId num_cur_out_face,
+	const Eigen::Matrix4d& vertex_tetra, const int* face_state, const Vector3& direction, const std::vector<Normals>& normals,
+	std::vector<cell>& nodes_value,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_res_bound,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_s,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_x,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_x0_local,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_in_id) {
+
+	Vector3 x;
+	Vector3 node;
+
+	switch (num_cur_out_face)
+	{
+
+	case 1:// 1->2
+		for (size_t num_node = 0; num_node < 3; ++num_node) {
+			node[0] = 0;
+			node[1] = straight_face.row(num_node)[0];
+			node[2] = straight_face.row(num_node)[1];
+			FromLocalToGlobalTetra(vertex_tetra, node, x);  // x->координата узла на выходящей грани
+
+//			X.push_back(x);
+			fwrite_unlocked(x.data(), sizeof(Type), 3, file_x.get()); posX++;
+
+			CalculateNodeValue(num_cur_cell, normals, grid, num_cur_out_face, face_state, direction, nodes_value,
+				num_node, vertex_tetra, x, file_res_bound, file_s, file_x0_local, file_in_id);
+		}
+		break;
+	case 2://2->0
+		for (size_t num_node = 0; num_node < 3; ++num_node) {
+			node[0] = straight_face.row(num_node)[0];
+			node[1] = 0;
+			node[2] = straight_face.row(num_node)[1];
+			FromLocalToGlobalTetra(vertex_tetra, node, x);  // x->координата узла на выходящей грани		
+			//X.push_back(x);
+			fwrite_unlocked(x.data(), sizeof(Type), 3, file_x.get()); posX++;
+
+			CalculateNodeValue(num_cur_cell, normals, grid, num_cur_out_face, face_state, direction, nodes_value,
+				num_node, vertex_tetra, x, file_res_bound, file_s, file_x0_local, file_in_id);
+		}
+		break;
+	case 0: //0->3
+		for (size_t num_node = 0; num_node < 3; ++num_node) {
+			node[0] = straight_face.row(num_node)[0];
+			node[1] = straight_face.row(num_node)[1];
+			node[2] = 0;
+			FromLocalToGlobalTetra(vertex_tetra, node, x);
+			//X.push_back(x);
+			fwrite_unlocked(x.data(), sizeof(Type), 3, file_x.get()); posX++;
+
+			CalculateNodeValue(num_cur_cell, normals, grid, num_cur_out_face, face_state, direction, nodes_value,
+				num_node, vertex_tetra, x, file_res_bound, file_s, file_x0_local, file_in_id);
+		}// x->координата узла на выходящей грани		}	
+		break;
+	case 3: //3->1
+		for (size_t num_node = 0; num_node < 3; ++num_node) {
+			node[0] = inclined_face.row(num_node)[0];
+			node[1] = inclined_face.row(num_node)[1];
+			node[2] = 0;
+			FromPlaneToTetra(inverse_transform_matrix, start_point_plane_coord, node, node);
+			FromLocalToGlobalTetra(vertex_tetra, node, x);
+			//X.push_back(x);
+			fwrite_unlocked(x.data(), sizeof(Type), 3, file_x.get()); posX++;
+
+			CalculateNodeValue(num_cur_cell, normals, grid, num_cur_out_face, face_state, direction, nodes_value,
+				num_node, vertex_tetra, x,
+				file_res_bound, file_s, file_x0_local, file_in_id);
+		}
+		break;
+	default:
+		std::cout << "Number face is not {0,1,2,3}????\n";
+		break;
+	}
+
+
+
+
+	// дублирование на соседнюю ячейку
+	/*int neighbor_id_face = nodes_value[num_cur_cell].neighbours_id_face[num_cur_out_face];
+
+	if (neighbor_id_face != -1)
+		nodes_value[neighbor_id_face / 4].nodes_value[neighbor_id_face % 4] =
+			nodes_value[num_cur_cell].nodes_value[num_cur_out_face];*/
+
+	return 0;
+}
+int CalculateNodeValue(const int num_cur_cell, const std::vector<Normals>& normals, const std::vector<Face>& grid,
+	const int num_cur_out_face, const int* face_state, const Vector3& direction,
+	std::vector<cell>& nodes_value, const int num_node, const Eigen::Matrix4d& vertex_tetra, Vector3& x,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_res_bound,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_s,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_x0_local,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_in_id) {
+
+	Vector3 x0;
+
+	for (ShortId num_in_face = 0; num_in_face < 4; ++num_in_face) {
+		if (!face_state[num_in_face]) continue;  // обрабатываем только входные грани
+
+		IntersectionWithPlane(grid[num_cur_cell * 4 + num_in_face], x, direction, x0);
+		
+		if (InTriangle(num_in_face, grid[num_cur_cell * 4 + num_in_face], normals[num_cur_cell], x0)) {
+
+			Type s = (x - x0).norm();
+
+			fwrite_unlocked(&s, sizeof(Type), 1, file_s.get());  posS++;
+			fwrite_unlocked(&num_in_face, sizeof(ShortId), 1, file_in_id.get()); posIn++;
+
+			/*S.push_back(s);
+			in_id.push_back(num_in_face);*/
+
+			// значение на входящей грани
+			Type I_x0 = CalculateIllumeOnInnerFace(num_cur_cell, num_in_face, vertex_tetra, x, x0, nodes_value,
+				file_res_bound, file_x0_local);
+
+			break;
+		}
+
+	}//for num_in_face
+
+
+	return 0;
+}
+
 int CalculateNodeValue(const int num_cur_cell, const vtkSmartPointer<vtkUnstructuredGrid>& unstructuredgrid, vtkCell* cur_cell,
 	const int num_cur_out_face, const int* face_state, const Vector3& direction,
 	std::vector<cell>& nodes_value, const int num_node, const Eigen::Matrix4d& vertex_tetra, Vector3& x,

@@ -4,6 +4,7 @@
 
 #include "struct_short_characteristics_headers.h"
 
+#define USE_VTK
 
 #ifdef _MSC_VER
 #define fwrite_unlocked _fwrite_nolock
@@ -24,6 +25,26 @@ extern std::vector<Type> S;
 
 using namespace std;
 using namespace std::chrono;
+
+
+struct Face {
+	Vector3 A;
+	Vector3 B;
+	Vector3 C;
+	Face& operator=(const Face& face) {
+		A = face.A;
+		B = face.B;
+		C = face.C;
+	}
+};
+struct FaceCell {
+	int face_id;
+	Face face;
+	FaceCell(const int id = 0, const Face& face_init = Face()) {
+		face_id = id;
+		face = face_init;
+	}
+};
 
 struct Normals {
 	std::vector<Vector3> n;

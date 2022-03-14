@@ -728,3 +728,200 @@ size_t WriteFileSolution(const std::string name_file_out, const std::vector<Type
 	writer->Write();
 	return 0;
 }
+
+size_t SetBasis(const Type* start_point, Vector3& normal, Eigen::Matrix3d& basis) {
+	/*по начальной точке и нормале строит локальный базис картинной плоскости (vec1, vec2).
+	  нормаль дана. задаем один вектор произвольно(ортагонально normal). третий вектор из векторного произведения*/
+	Vector3 vec_1;
+	Vector3 vec_2;
+
+	if (abs(normal[1]) < 1e-20) {
+		vec_1[0] = 0;
+		vec_1[1] = 1;
+		vec_1[2] = 0;
+	}
+	else {
+		vec_1[0] = 1;
+		vec_1[2] = 0;
+		vec_1[1] = -(normal[0] * vec_1[0] + normal[2] * vec_1[2]) / normal[1];  //св-во скалярного произведения (N, vec1)==0
+	}
+
+	// правельная ориентация базиса плоскости
+	if (normal[1] < 0)
+		for (int i = 0; i < 3; ++i)
+			vec_1[i] *= -1;
+
+	// обычное векторное умножение. Eigen временно и не нужен!!!
+	Eigen::Vector3d c = normal.cross(vec_1);
+
+	for (size_t i = 0; i < 3; ++i)
+		vec_2[i] = -c(i);
+
+	vec_1.normalize();
+	vec_2.normalize();
+
+	basis.row(0) = vec_1;
+	basis.row(1) = vec_2;
+	basis.row(2) = normal;
+
+	return 0;
+}
+size_t Make2dPoint(const Type* start, const Eigen::Matrix3d& local_basis, const Type* point, Vector3& new_point) {
+
+
+
+	for (size_t i = 0; i < 3; i++)
+		new_point[i] = 0;
+
+	//перевод 3d точки в 2d (в локальном базисе {start, local_basis}) 
+	for (size_t k = 0; k < 3; k++) {
+		new_point[0] += (point[k] - start[k]) * local_basis(0, k);
+		new_point[1] += (point[k] - start[k]) * local_basis(1, k);
+	}
+	return 0;
+}
+int IntersectionWithPlane(const Face& face, const Vector3& start_point, const Vector3& direction, Vector3& result) {
+
+	//вершины треугольника
+
+
+	Type a, b, c, d;  // параметры уравнения плоскости
+	Type t;
+
+	a = face.A[1] * (face.B[2] - face.C[2]) + face.B[1] * (face.C[2] - face.A[2]) + face.C[1] * (face.A[2] - face.B[2]);
+	b = face.A[0] * (face.C[2] - face.B[2]) + face.B[0] * (face.A[2] - face.C[2]) + face.C[0] * (face.B[2] - face.A[2]);
+	c = face.A[0] * (face.B[1] - face.C[1]) + face.B[0] * (face.C[1] - face.A[1]) + face.C[0] * (face.A[1] - face.B[1]);
+	d = face.A[0] * (face.C[1] * face.B[2] - face.B[1] * face.C[2]) + face.B[0] * (face.A[1] * face.C[2] -
+		face.C[1] * face.A[2]) + face.C[0] * (face.B[1] * face.A[2] - face.A[1] * face.B[2]);
+
+	t = -(a * start_point[0] + b * start_point[1] + c * start_point[2] + d) / (a * direction[0] + b * direction[1] + c * direction[2]);
+
+	for (size_t i = 0; i < 3; ++i)
+		result[i] = (direction[i] * t + start_point[i]);  // точка пересечения луча  (start->direction) с плоскостью!!! face
+
+	return 0;
+}
+int InTriangle(int number_face, const Face& cell_face, const Normals& normals_cell, const Eigen::Vector3d& XX) {
+	/*face --- треугольник, X --- точка для проверки*/
+
+	// вершины треугольника
+	const Type* AA = cell_face.A.data();
+	const Type* BB = cell_face.B.data();
+	const Type* CC = cell_face.C.data();
+
+	Vector3 A, B, C, X;  // новые точки на плоскости
+	{
+		Eigen::Matrix3d basis;
+		Vector3 n = normals_cell.n[number_face];
+		SetBasis(AA, n, basis);
+		Make2dPoint(AA, basis, AA, A);
+		Make2dPoint(AA, basis, BB, B);
+		Make2dPoint(AA, basis, CC, C);
+		Make2dPoint(AA, basis, XX.data(), X);
+	}
+
+	// линейная алгебра
+	Type r1 = (A[0] - X[0]) * (B[1] - A[1]) - (B[0] - A[0]) * (A[1] - X[1]);
+	Type r2 = (B[0] - X[0]) * (C[1] - B[1]) - (C[0] - B[0]) * (B[1] - X[1]);
+	Type r3 = (C[0] - X[0]) * (A[1] - C[1]) - (A[0] - C[0]) * (C[1] - X[1]);
+
+	if (r1 < 0 && r2 < 0 && r3 < 0)
+		return true;
+	else if (r1 > 0 && r2 > 0 && r3 > 0)
+		return true;
+	else return false;
+}
+
+
+
+int ReadCellFaces(const std::string name_file_cells, std::vector<Face>& grid) {
+
+	FILE* f;
+	f = fopen(name_file_cells.c_str(), "rb");
+
+
+
+	int n;
+	fread_unlocked(&n, sizeof(int), 1, f);
+	grid.resize(n * 4);
+
+	for (size_t i = 0; i < n; i++) {
+		for (size_t j = 0; j < 4; j++) {
+			fread_unlocked(grid[i * 4 + j].A.data(), sizeof(Type), 3, f);
+			fread_unlocked(grid[i * 4 + j].B.data(), sizeof(Type), 3, f);
+			fread_unlocked(grid[i * 4 + j].C.data(), sizeof(Type), 3, f);
+		}
+	}
+
+	fclose(f);
+
+	return 0;
+}
+
+int WriteCellFaces(const std::string name_file_cells, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid) {
+
+	FILE* f;
+	f = fopen(name_file_cells.c_str(), "wb");
+
+	//Type A[3];
+	//Type B[3];
+	//Type C[3];
+	vtkPoints* points_face;
+	std::vector<Type>pp(9);
+
+	const int n = unstructured_grid->GetNumberOfCells();
+	fwrite_unlocked(&n, sizeof(int), 1, f);
+
+	for (size_t i = 0; i < n; i++) {
+		for (size_t j = 0; j < 4; j++) {
+			points_face = unstructured_grid->GetCell(i)->GetFace(j)->GetPoints();
+
+			points_face->GetPoint(0, pp.data());
+			points_face->GetPoint(1, pp.data() + 3);
+			points_face->GetPoint(2, pp.data() + 6);
+
+			fwrite_unlocked(pp.data(), sizeof(Type), 9, f);
+
+		}
+
+	}
+
+	fclose(f);
+
+	return 0;
+}
+
+int WriteVertex(const std::string name_file_vertex, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid) {
+
+	FILE* f;
+	f = fopen(name_file_vertex.c_str(), "wb");
+
+	const int n = unstructured_grid->GetNumberOfCells();
+	fwrite_unlocked(&n, sizeof(int), 1, f);
+	Eigen::Matrix4d vertex_tetra;
+
+	for (size_t i = 0; i < n; i++) {
+		SetVertexMatrix(i, unstructured_grid, vertex_tetra);
+		fwrite_unlocked(vertex_tetra.data(), sizeof(Eigen::Matrix4d), 1, f);
+	}
+	fclose(f);
+
+	return 0;
+}
+int ReadVertex(const std::string name_file_vertex, std::vector<Eigen::Matrix4d>& vertexs) {
+
+	FILE* f;
+	f = fopen(name_file_vertex.c_str(), "wb");
+
+	int n;
+	fread_unlocked(&n, sizeof(int), 1, f);
+	vertexs.resize(n);
+	Eigen::Matrix4d vertex_tetra;
+
+	for (size_t i = 0; i < n; i++) {		
+		fread_unlocked(vertexs[i].data(), sizeof(Eigen::Matrix4d), 1, f);
+	}
+	fclose(f);
+
+	return 0;
+}

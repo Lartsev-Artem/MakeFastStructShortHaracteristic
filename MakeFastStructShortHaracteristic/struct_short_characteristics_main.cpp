@@ -67,6 +67,7 @@ int main(int argc, char* argv[])
 	std::string name_file_graph;
 	std::string out_file_grid_vtk;
 	std::string name_file_normals;
+	
 
 	if (ReadStartSettings(name_file_settings, name_file_vtk, name_file_sphere_direction, out_file_grid_vtk, BASE_ADRESS, name_file_normals)) {
 		std::cout << "Error reading the start settings\n";
@@ -84,6 +85,18 @@ int main(int argc, char* argv[])
 	}
 	_clock += omp_get_wtime();
 	std::cout << "\n Reading time of the vtk_grid file: " << _clock << "\n";
+
+	// make
+	std::vector<Face> grid;
+	std::vector<Eigen::Matrix4d> vertexs;
+	{
+		std::string name_file_cells = BASE_ADRESS + "grid.bin";
+		std::string name_file_vertex = BASE_ADRESS + "vertex.bin";		
+		
+		ReadCellFaces(name_file_cells, grid);
+		ReadVertex(name_file_vertex, vertexs);
+
+	}
 
 
 	vector<Vector3> directions;
@@ -241,15 +254,15 @@ int main(int argc, char* argv[])
 				if (count_cells * num_direction + h > sorted_id_cell.size()) printf("err size graph\n");
 				num_cell = sorted_id_cell[count_cells * num_direction + h];
 
-				SetVertexMatrix(num_cell, unstructured_grid, vertex_tetra);
+				//SetVertexMatrix(num_cell, unstructured_grid, vertex_tetra);
 				FindInAndOutFaces(direction, num_cell, normals, face_state);
 
 				n_out = 0;
 
 				for (ShortId num_out_face = 0; num_out_face < 4; ++num_out_face) {
 					if (!face_state[num_out_face]) {  // выходящие грани
-						GetNodes(num_cell, unstructured_grid, unstructured_grid->GetCell(num_cell), num_out_face, vertex_tetra,
-							face_state, direction, nodes_value,
+						GetNodes(num_cell,grid, num_out_face, vertexs[num_cell],
+							face_state, direction, normals, nodes_value,
 							file_res_bound, file_s, file_x, file_x0_local, file_in_id);
 
 						fwrite_unlocked(&num_out_face, sizeof(ShortId), 1, file_out_id.get()); posOut++;

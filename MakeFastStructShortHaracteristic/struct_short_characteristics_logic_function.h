@@ -7,7 +7,14 @@
 #include "struct_short_characteristics_calculations.h"
 
 size_t IntersectionWithPlaneDisk(const Vector3& X0, const Vector3& n, Vector3& res);
-
+int GetNodes(const int num_cur_cell, const std::vector<Face>& grid, const ShortId num_cur_out_face,
+	const Eigen::Matrix4d& vertex_tetra, const int* face_state, const Vector3& direction, const std::vector<Normals>& normals,
+	std::vector<cell>& nodes_value,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_res_bound,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_s,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_x,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_x0_local,
+	std::unique_ptr<FILE, int(*)(FILE*)>& file_in_id);
 int GetNodes(const int num_cur_cell, const vtkSmartPointer<vtkUnstructuredGrid>& unstructuredgrid, vtkCell* cur_cell, const int num_cur_out_face,
 	const Eigen::Matrix4d& vertex_tetra, const int* face_state, const Vector3& direction,
 	std::vector<cell>& nodes_value, const std::vector<Type>& illum_old,
