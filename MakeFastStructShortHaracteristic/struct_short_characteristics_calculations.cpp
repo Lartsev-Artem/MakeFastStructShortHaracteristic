@@ -1,6 +1,6 @@
 #include "struct_short_characteristics_calculations.h"
 
-
+#ifdef USE_VTK
 size_t ReadFileVtk(const size_t class_file_vtk, const std::string name_file_vtk, vtkSmartPointer<vtkUnstructuredGrid>& unstructuredgrid,
 	vtkDataArray*& density, vtkDataArray*& absorp_coef, vtkDataArray*& rad_en_loose_rate, const bool is_print/*=false*/) {
 
@@ -52,68 +52,6 @@ size_t ReadFileVtk(const size_t class_file_vtk, const std::string name_file_vtk,
 	reader_vtk->GetOutput()->GlobalReleaseDataFlagOn();
 	return 0;
 }
-
-size_t ReadSphereDirectionDecartToSpherical(const std::string name_file_sphere_direction, vector<Vector3>& directions_all, vector<Type>& squares, Type& square_surface) {
-
-	ifstream ifile;
-
-	ifile.open(name_file_sphere_direction);
-	if (!ifile.is_open()) {
-		std::cout << "Error read file sphere direction\n";
-		return 1;
-	}
-	int N = 0;
-	ifile >> N;
-	directions_all.resize(N);
-	squares.resize(N);
-
-	for (int i = 0; i < N; i++) {
-		ifile >> squares[i];
-		ifile >> directions_all[i][0] >> directions_all[i][1] >> directions_all[i][2];
-	}
-	ifile >> square_surface;
-	ifile.close();
-
-	return 0;
-}
-
-int InitGlobalValue(Vector3& start_point_plane_coord, Matrix3& transform_matrix, Matrix3& inverse_transform_matrix,
-	Matrix3& straight_face, Matrix3& inclined_face) {
-	// 3 узла интерполяции
-		{
-			straight_face << 1. / 6, 1. / 6, 1,
-				2. / 3, 1. / 6, 1,
-				1. / 6, 2. / 3, 1;
-		}
-
-		// 3 узла интерполяции на наклонной плоскости
-		{
-			inclined_face <<
-				0, sqrt(2. / 3), 1,
-				sqrt(2) / 4, 1. / (2 * sqrt(6)), 1,
-				-sqrt(2) / 4, 1. / (2 * sqrt(6)), 1;
-		}
-
-		//Матрицы перехода из стандартного тетраэдра в координаты наклонной плоскости 
-		{ transform_matrix <<
-			-1. / sqrt(2), 1. / sqrt(2), 0,
-			-1. / sqrt(6), -1. / sqrt(6), sqrt(2. / 3),
-			1. / sqrt(3), 1. / sqrt(3), 1. / sqrt(3);
-		}
-
-		//Матрицы перехода из наклонной плоскости в  координаты стандартного тетраэдра
-		{
-			inverse_transform_matrix <<
-				-1. / sqrt(2), -1. / sqrt(6), 1. / sqrt(3),
-				1. / sqrt(2), -1. / sqrt(6), 1. / sqrt(3),
-				0, sqrt(2. / 3), 1. / sqrt(3);
-		}
-
-		// Начало координата плоскости
-		start_point_plane_coord << 0.5, 0.5, 0;
-		return 0;
-}
-
 int FindNeighborsPairFaceAndBoundaries(const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid, std::vector<int>& all_pairs_face) {
 
 	int count_unique_face = 0;
@@ -148,9 +86,9 @@ int FindNeighborsPairFaceAndBoundaries(const vtkSmartPointer<vtkUnstructuredGrid
 			else if (idc->GetNumberOfIds() == 0) { // граничная ячейка
 
 				Vector3 P(unstructured_grid->GetPoint(id_a));
-				if ((P - center_point).norm() > inner_radius)  
+				if ((P - center_point).norm() > inner_radius)
 					all_pairs_face[num_cell * 4 + num_face] = -1; // внешняя сфера
-				else 
+				else
 					all_pairs_face[num_cell * 4 + num_face] = -2; // внутренняя сфера				
 			}
 			else
@@ -161,7 +99,117 @@ int FindNeighborsPairFaceAndBoundaries(const vtkSmartPointer<vtkUnstructuredGrid
 
 	return count_unique_face;
 }
-int FindNeighborsPairFace(const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid, std::vector<int>& all_pairs_face) {
+int GetNumberNeighborFace(const int a, const int b, const int c, vtkCell* neighbor_cell) {
+
+	vtkIdList* idc;
+
+	int x, y, z;
+	for (size_t i = 0; i < 4; i++)
+	{
+		idc = neighbor_cell->GetFace(i)->GetPointIds();
+		x = idc->GetId(0);
+		y = idc->GetId(1);
+		z = idc->GetId(2);
+
+		if (a == x && b == y && c == z) return i;
+		else if (a == x && b == z && c == y) return i;
+		else if (a == y && b == x && c == z) return i;
+		else if (a == y && b == z && c == x) return i;
+		else if (a == z && b == x && c == y) return i;
+		else if (a == z && b == y && c == x) return i;
+
+	}
+	return -2;
+}
+int WriteCellFaces(const std::string name_file_cells, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid) {
+
+	FILE* f;
+	f = fopen(name_file_cells.c_str(), "wb");
+
+	//Type A[3];
+	//Type B[3];
+	//Type C[3];
+	vtkPoints* points_face;
+	std::vector<Type>pp(9);
+
+	const int n = unstructured_grid->GetNumberOfCells();
+	fwrite_unlocked(&n, sizeof(int), 1, f);
+
+	for (size_t i = 0; i < n; i++) {
+		for (size_t j = 0; j < 4; j++) {
+			points_face = unstructured_grid->GetCell(i)->GetFace(j)->GetPoints();
+
+			points_face->GetPoint(0, pp.data());
+			points_face->GetPoint(1, pp.data() + 3);
+			points_face->GetPoint(2, pp.data() + 6);
+
+			fwrite_unlocked(pp.data(), sizeof(Type), 9, f);
+
+		}
+
+	}
+
+	fclose(f);
+
+	return 0;
+}
+
+int WriteVertex(const std::string name_file_vertex, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid) {
+
+	FILE* f;
+	f = fopen(name_file_vertex.c_str(), "wb");
+
+	const int n = unstructured_grid->GetNumberOfCells();
+	fwrite_unlocked(&n, sizeof(int), 1, f);
+	Eigen::Matrix4d vertex_tetra;
+
+	for (size_t i = 0; i < n; i++) {
+		SetVertexMatrix(i, unstructured_grid, vertex_tetra);
+		fwrite_unlocked(vertex_tetra.data(), sizeof(Eigen::Matrix4d), 1, f);
+	}
+	fclose(f);
+
+	return 0;
+}
+
+int WriteIdPairs(const std::string name_file_pairs, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid) {
+
+	std::vector<int> all_pairs_face;
+
+	FindNeighborsPairFaceAndBoundaries(unstructured_grid, all_pairs_face);
+
+	FILE* f;
+	f = fopen(name_file_pairs.c_str(), "wb");
+	if (!f) printf("id_neighbors not open\n");
+
+	int n = all_pairs_face.size();
+	fwrite_unlocked(&n, sizeof(int), 1, f);
+	fwrite_unlocked(all_pairs_face.data(), sizeof(int), all_pairs_face.size(), f);
+
+	fclose(f);
+	return 0;
+}
+int SetVertexMatrix(const size_t number_cell, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid, Eigen::Matrix4d& vertex_tetra) {
+
+	// 4 вершины треугольника(по столбцам и единицы в нижний строке)
+
+	vtkPoints* points = unstructured_grid->GetCell(number_cell)->GetPoints();
+	for (size_t j = 0; j < 3; j++) {
+		vertex_tetra(j, 2) = points->GetPoint(2)[j];
+		vertex_tetra(j, 0) = points->GetPoint(0)[j];
+		vertex_tetra(j, 1) = points->GetPoint(1)[j];
+		vertex_tetra(j, 3) = points->GetPoint(3)[j];
+	}
+
+	for (size_t i = 0; i < 4; i++)
+		vertex_tetra(3, i) = 1;
+
+	return 0;
+}
+#ifdef 0
+
+int FindNeighborsPairFace(const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid, std::vector<int>& all_pairs_face)
+{
 
 	int count_unique_face = 0;
 	const int N = unstructured_grid->GetNumberOfCells();
@@ -203,164 +251,7 @@ int FindNeighborsPairFace(const vtkSmartPointer<vtkUnstructuredGrid>& unstructur
 
 	return count_unique_face;
 }
-int GetNumberNeighborFace(const int a, const int b, const int c, vtkCell* neighbor_cell) {
 
-	vtkIdList* idc;
-
-	int x, y, z;
-	for (size_t i = 0; i < 4; i++)
-	{
-		idc = neighbor_cell->GetFace(i)->GetPointIds();
-		x = idc->GetId(0);
-		y = idc->GetId(1);
-		z = idc->GetId(2);
-
-		if (a == x && b == y && c == z) return i;
-		else if (a == x && b == z && c == y) return i;
-		else if (a == y && b == x && c == z) return i;
-		else if (a == y && b == z && c == x) return i;
-		else if (a == z && b == x && c == y) return i;
-		else if (a == z && b == y && c == x) return i;
-
-	}
-	return -2;
-}
-
-
-int InitNodesValue(const std::vector<int>& all_pairs_face, std::vector<cell>& nodes_value) {
-
-
-	const int n = all_pairs_face.size()/4;
-	nodes_value.resize(n);
-
-	for (size_t i = 0; i < n; ++i)
-	{
-		//nodes_value[i].id = i;	
-		for (int j = 0; j < 4; j++) {
-			nodes_value[i].neighbours_id_face[j] = all_pairs_face[i * 4 + j];
-			nodes_value[i].nodes_value[j] = Vector3(-666, -666, -666);
-		}
-	}
-	return 0;
-}
-
-int ResetNodesValue(std::vector<cell>& nodes_value) {
-
-
-	const int n = nodes_value.size();
-	
-	for (size_t i = 0; i < n; ++i)
-	{
-		//nodes_value[i].id = i;	
-		for (int j = 0; j < 4; j++) {
-			nodes_value[i].nodes_value[j] = Vector3(-666, -666, -666);
-		}
-	}
-	return 0;
-}
-
-int ReadNormalFile(std::string& name_file_normals, std::vector<Normals>& normals) {
-	std::ifstream ifile;
-
-	ifile.open(name_file_normals);
-	if (!ifile.is_open()) {
-		std::cout << "Error read file normals\n";
-		return 1;
-	}
-
-	int N;
-	ifile >> N;
-	normals.resize(N);
-
-	Normals norm(4);
-	for (size_t i = 0; i < N; i++)
-	{
-		for (int j = 0; j < 4; j++)
-			ifile >> norm.n[j][0] >> norm.n[j][1] >> norm.n[j][2];
-		normals[i] = norm;
-	}
-
-	ifile.close();
-	return 0;
-}
-
-Type NormIllum(const std::vector<Type>& Illum, const std::vector<Type>& Illum2) {
-	Type max = -1;
-	Type buf;
-	for (size_t i = 0; i < Illum.size(); i++)
-	{
-		buf = fabs(Illum[i] - Illum2[i]);
-		if (buf > max)
-			max = buf;
-	}
-	return max;
-}
-
-int ReadGraph(const std::string name_file_graph, std::vector<int>& sorted_id_cell) {
-	ifstream ifile;
-	ifile.open(name_file_graph);
-	if (!ifile.is_open()) {
-		std::cout << "Error open file\n";
-		std::cout << "file_graph is not opened for reading\n";
-		return 1;
-	}
-
-	int i;
-	int count = 0;
-	while (ifile >> i) {
-		sorted_id_cell[count++] = i;
-	}
-	ifile.close();
-	return 0;
-}
-int ReadGraphBin(const std::string name_file_graph, std::vector<int>& sorted_id_cell) {
-
-	std::unique_ptr<FILE, int(*)(FILE*)> file_graph(fopen(name_file_graph.c_str(), "rb"), fclose);
-	if (!file_graph) { printf("file_graph is not opened for writing\n"); return 1; }
-
-	const int n = sorted_id_cell.size();
-	fread_unlocked(sorted_id_cell.data(), sizeof(int), n, file_graph.get());
-
-	fclose(file_graph.get());
-	return 0;
-}
-
-int SetVertexMatrix(const size_t number_cell, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid, Eigen::Matrix4d& vertex_tetra) {
-
-	// 4 вершины треугольника(по столбцам и единицы в нижний строке)
-
-	vtkPoints* points = unstructured_grid->GetCell(number_cell)->GetPoints();
-	for (size_t j = 0; j < 3; j++) {
-		vertex_tetra(j, 2) = points->GetPoint(2)[j];
-		vertex_tetra(j, 0) = points->GetPoint(0)[j];
-		vertex_tetra(j, 1) = points->GetPoint(1)[j];
-		vertex_tetra(j, 3) = points->GetPoint(3)[j];
-	}
-
-	for (size_t i = 0; i < 4; i++)
-		vertex_tetra(3, i) = 1;
-
-	return 0;
-}
-
-int FindInAndOutFaces(const Vector3& direction, const int number_cell, const std::vector<Normals>& normals, int* face_state) {
-	//face_state  -0=> выходящая грань,  1=> входящая  face_state.size=4!!!  
-
-	Vector3 normal;
-
-	for (size_t i = 0; i < 4; ++i) {
-
-		normal = normals[number_cell].n[i];
-
-		if (normal.dot(direction) < -eps)
-			face_state[i] = 1;
-		else
-			face_state[i] = 0;  // если грань параллельна, считаем, что она не является определяющей
-
-	}
-
-	return 0;
-}
 
 size_t CenterOfTetra(const int number_cell, const vtkSmartPointer<vtkUnstructuredGrid>& unstructuredgrid, Vector3& point_in_tetra) {
 
@@ -404,132 +295,6 @@ size_t FindAllCenterOfTetra(const vtkSmartPointer<vtkUnstructuredGrid>& unstruct
 	return 0;
 }
 
-int FromGlobalToLocalTetra(const Eigen::Matrix4d& vertex_tetra, const Eigen::Vector3d& global_coord, Eigen::Vector3d& local_coord)
-{
-	// vertex_tetra -> [X;Y;Z;1]
-	// возможно надо будет использовать transpose из-за инициализации матрицы перехода
-
-	Eigen::Matrix4d vertex_tetra_inverse = vertex_tetra.inverse();
-	// сразу с транспонированием
-	for (int i = 0; i < 3; ++i)
-	{
-		local_coord[i] = 0;
-		for (int j = 0; j < 3; ++j)
-			local_coord[i] += vertex_tetra_inverse(i, j) * global_coord[j];
-		local_coord[i] += vertex_tetra_inverse(i, 3);
-	}
-
-	//local_coord = vertex_tetra * global_coord;
-	return 0;
-}
-int FromLocalToGlobalTetra(const Eigen::Matrix4d& vertex_tetra, const Eigen::Vector3d& local_coord, Eigen::Vector3d& global_coord) {
-	// vertex_tetra -> [X,Y,Z,1]
-	// написать в ручную т.к. преобразования известны, и 4я строка постоянна и меняться не должна
-
-	Type eta4 = 1 - local_coord[0] - local_coord[1] - local_coord[2];
-	for (int i = 0; i < 3; ++i)
-	{
-		global_coord[i] = 0;
-		for (int j = 0; j < 3; ++j)
-			global_coord[i] += vertex_tetra(i, j) * local_coord[j];
-		global_coord[i] += vertex_tetra(i, 3) * eta4;
-	}
-
-	//global_coord = vertex_tetra.inverse() * local_coord;
-
-	return 0;
-}
-
-int FromTetraToPlane(const Eigen::Matrix3d& transform_matrix, const Eigen::Vector3d& start_point, const Eigen::Vector3d& tetra_coord, Eigen::Vector3d& plane_coord) {
-	plane_coord = transform_matrix * (tetra_coord - start_point);
-	return 0;
-}
-int FromPlaneToTetra(const Eigen::Matrix3d& inverse_transform_matrix, const Eigen::Vector3d& start_point, const Eigen::Vector3d& plane_coord,
-	Eigen::Vector3d& tetra_coord) {
-	tetra_coord = inverse_transform_matrix * plane_coord + start_point;
-	return 0;
-}
-
-size_t IntersectionWithPlane(vtkCell* face, const Vector3& start_point, const Vector3& direction, Vector3& result) {
-
-	//вершины треугольника
-
-	Type A[3];
-	Type B[3];
-	Type C[3];
-	face->GetPoints()->GetPoint(0, A);
-	face->GetPoints()->GetPoint(1, B);
-	face->GetPoints()->GetPoint(2, C);
-
-
-	Type a, b, c, d;  // параметры уравнения плоскости
-	Type t;
-
-	a = A[1] * (B[2] - C[2]) + B[1] * (C[2] - A[2]) + C[1] * (A[2] - B[2]);
-	b = A[0] * (C[2] - B[2]) + B[0] * (A[2] - C[2]) + C[0] * (B[2] - A[2]);
-	c = A[0] * (B[1] - C[1]) + B[0] * (C[1] - A[1]) + C[0] * (A[1] - B[1]);
-	d = A[0] * (C[1] * B[2] - B[1] * C[2]) + B[0] * (A[1] * C[2] - C[1] * A[2]) + C[0] * (B[1] * A[2] - A[1] * B[2]);
-
-	t = -(a * start_point[0] + b * start_point[1] + c * start_point[2] + d) / (a * direction[0] + b * direction[1] + c * direction[2]);
-
-	for (size_t i = 0; i < 3; ++i)
-		result[i] = (direction[i] * t + start_point[i]);  // точка пересечения луча  (start->direction) с плоскостью!!! face
-
-	return 0;
-}
-
-
-size_t SetBasis(const Type* start_point, Vector3& normal, Matrix3& basis) {
-	/*по начальной точке и нормале строит локальный базис картинной плоскости (vec1, vec2).
-	  нормаль дана. задаем один вектор произвольно(ортагонально normal). третий вектор из векторного произведения*/
-	Vector3 vec_1;
-	Vector3 vec_2;
-
-	if (abs(normal[1]) < 1e-20) {
-		vec_1[0] = 0;
-		vec_1[1] = 1;
-		vec_1[2] = 0;
-	}
-	else {
-		vec_1[0] = 1;
-		vec_1[2] = 0;
-		vec_1[1] = -(normal[0] * vec_1[0] + normal[2] * vec_1[2]) / normal[1];  //св-во скалярного произведения (N, vec1)==0
-	}
-
-	// правельная ориентация базиса плоскости
-	if (normal[1] < 0)
-		for (int i = 0; i < 3; ++i)
-			vec_1[i] *= -1;
-
-	// обычное векторное умножение. Eigen временно и не нужен!!!
-	Eigen::Vector3d c = normal.cross(vec_1);
-
-	for (size_t i = 0; i < 3; ++i)
-		vec_2[i] = -c(i);
-
-	vec_1.normalize();
-	vec_2.normalize();
-
-	basis.row(0) = vec_1;
-	basis.row(1) = vec_2;
-	basis.row(2) = normal;
-
-	return 0;
-}
-size_t Make2dPoint(const Type* start, const Matrix3& local_basis, const Type* point, Vector3& new_point) {
-
-
-
-	for (size_t i = 0; i < 3; i++)
-		new_point[i] = 0;
-
-	//перевод 3d точки в 2d (в локальном базисе {start, local_basis}) 
-	for (size_t k = 0; k < 3; k++) {
-		new_point[0] += (point[k] - start[k]) * local_basis(0, k);
-		new_point[1] += (point[k] - start[k]) * local_basis(1, k);
-	}
-	return 0;
-}
 size_t NormalToFace(const int num_cell, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid, int number_face, Vector3& n) {
 
 	vtkSmartPointer<vtkIdList> idp = unstructured_grid->GetCell(num_cell)->GetFace(number_face)->GetPointIds();
@@ -620,6 +385,367 @@ bool InTriangle(const int num_cell, const vtkSmartPointer<vtkUnstructuredGrid>& 
 	else return false;
 }
 
+size_t WriteFileSolution(const std::string name_file_out, const std::vector<Type>& vector_illum, const std::vector<Type>& vector_energy,
+	vtkSmartPointer<vtkUnstructuredGrid>& u_grid) {
+
+	int n = u_grid->GetNumberOfCells();
+
+	vtkSmartPointer<vtkDoubleArray> IllumArray =
+		vtkSmartPointer<vtkDoubleArray>::New();
+
+	vtkSmartPointer<vtkDoubleArray> EnergyArray =
+		vtkSmartPointer<vtkDoubleArray>::New();
+
+	for (size_t i = 0; i < n; i++) {
+		EnergyArray->InsertNextTuple1(vector_energy[i]);
+		IllumArray->InsertNextTuple1(vector_illum[i]);  // по первому направлению
+	}
+
+	EnergyArray->SetName("energy");
+	u_grid->GetCellData()->AddArray(EnergyArray);
+
+	IllumArray->SetName("illum");
+	u_grid->GetCellData()->AddArray(IllumArray);
+
+
+	vtkSmartPointer<vtkGenericDataObjectWriter> writer =
+		vtkSmartPointer<vtkGenericDataObjectWriter>::New();
+	writer->SetFileName(name_file_out.c_str());
+	writer->SetInputData(u_grid);
+	writer->Write();
+	return 0;
+}
+
+int GetNumberNeighborFace(const int a, const int b, const int c, vtkCell* neighbor_cell) {
+
+	vtkIdList* idc;
+
+	int x, y, z;
+	for (size_t i = 0; i < 4; i++)
+	{
+		idc = neighbor_cell->GetFace(i)->GetPointIds();
+		x = idc->GetId(0);
+		y = idc->GetId(1);
+		z = idc->GetId(2);
+
+		if (a == x && b == y && c == z) return i;
+		else if (a == x && b == z && c == y) return i;
+		else if (a == y && b == x && c == z) return i;
+		else if (a == y && b == z && c == x) return i;
+		else if (a == z && b == x && c == y) return i;
+		else if (a == z && b == y && c == x) return i;
+
+	}
+	return -2;
+}
+size_t IntersectionWithPlane(vtkCell* face, const Vector3& start_point, const Vector3& direction, Vector3& result) {
+
+	//вершины треугольника
+
+	Type A[3];
+	Type B[3];
+	Type C[3];
+	face->GetPoints()->GetPoint(0, A);
+	face->GetPoints()->GetPoint(1, B);
+	face->GetPoints()->GetPoint(2, C);
+
+
+	Type a, b, c, d;  // параметры уравнения плоскости
+	Type t;
+
+	a = A[1] * (B[2] - C[2]) + B[1] * (C[2] - A[2]) + C[1] * (A[2] - B[2]);
+	b = A[0] * (C[2] - B[2]) + B[0] * (A[2] - C[2]) + C[0] * (B[2] - A[2]);
+	c = A[0] * (B[1] - C[1]) + B[0] * (C[1] - A[1]) + C[0] * (A[1] - B[1]);
+	d = A[0] * (C[1] * B[2] - B[1] * C[2]) + B[0] * (A[1] * C[2] - C[1] * A[2]) + C[0] * (B[1] * A[2] - A[1] * B[2]);
+
+	t = -(a * start_point[0] + b * start_point[1] + c * start_point[2] + d) / (a * direction[0] + b * direction[1] + c * direction[2]);
+
+	for (size_t i = 0; i < 3; ++i)
+		result[i] = (direction[i] * t + start_point[i]);  // точка пересечения луча  (start->direction) с плоскостью!!! face
+
+	return 0;
+}
+#endif
+#endif
+
+
+size_t ReadSphereDirectionDecartToSpherical(const std::string name_file_sphere_direction, vector<Vector3>& directions_all, vector<Type>& squares, Type& square_surface) {
+
+	ifstream ifile;
+
+	ifile.open(name_file_sphere_direction);
+	if (!ifile.is_open()) {
+		std::cout << "Error read file sphere direction\n";
+		return 1;
+	}
+	int N = 0;
+	ifile >> N;
+	directions_all.resize(N);
+	squares.resize(N);
+
+	for (int i = 0; i < N; i++) {
+		ifile >> squares[i];
+		ifile >> directions_all[i][0] >> directions_all[i][1] >> directions_all[i][2];
+	}
+	ifile >> square_surface;
+	ifile.close();
+
+	return 0;
+}
+
+int InitGlobalValue(Vector3& start_point_plane_coord, Matrix3& transform_matrix, Matrix3& inverse_transform_matrix,
+	Matrix3& straight_face, Matrix3& inclined_face) {
+	// 3 узла интерполяции
+		{
+			straight_face << 1. / 6, 1. / 6, 1,
+				2. / 3, 1. / 6, 1,
+				1. / 6, 2. / 3, 1;
+		}
+
+		// 3 узла интерполяции на наклонной плоскости
+		{
+			inclined_face <<
+				0, sqrt(2. / 3), 1,
+				sqrt(2) / 4, 1. / (2 * sqrt(6)), 1,
+				-sqrt(2) / 4, 1. / (2 * sqrt(6)), 1;
+		}
+
+		//Матрицы перехода из стандартного тетраэдра в координаты наклонной плоскости 
+		{ transform_matrix <<
+			-1. / sqrt(2), 1. / sqrt(2), 0,
+			-1. / sqrt(6), -1. / sqrt(6), sqrt(2. / 3),
+			1. / sqrt(3), 1. / sqrt(3), 1. / sqrt(3);
+		}
+
+		//Матрицы перехода из наклонной плоскости в  координаты стандартного тетраэдра
+		{
+			inverse_transform_matrix <<
+				-1. / sqrt(2), -1. / sqrt(6), 1. / sqrt(3),
+				1. / sqrt(2), -1. / sqrt(6), 1. / sqrt(3),
+				0, sqrt(2. / 3), 1. / sqrt(3);
+		}
+
+		// Начало координата плоскости
+		start_point_plane_coord << 0.5, 0.5, 0;
+		return 0;
+}
+
+
+int InitNodesValue(const std::vector<int>& all_pairs_face, std::vector<cell>& nodes_value) {
+
+
+	const int n = all_pairs_face.size()/4;
+	nodes_value.resize(n);
+
+	for (size_t i = 0; i < n; ++i)
+	{
+		//nodes_value[i].id = i;	
+		for (int j = 0; j < 4; j++) {
+			nodes_value[i].neighbours_id_face[j] = all_pairs_face[i * 4 + j];
+			nodes_value[i].nodes_value[j] = Vector3(-666, -666, -666);
+		}
+	}
+	return 0;
+}
+
+int ResetNodesValue(std::vector<cell>& nodes_value) {
+
+
+	const int n = nodes_value.size();
+	
+	for (size_t i = 0; i < n; ++i)
+	{
+		//nodes_value[i].id = i;	
+		for (int j = 0; j < 4; j++) {
+			nodes_value[i].nodes_value[j] = Vector3(-666, -666, -666);
+		}
+	}
+	return 0;
+}
+
+int ReadNormalFile(const std::string& name_file_normals, std::vector<Normals>& normals) {
+	
+	FILE* f;
+	f = fopen(name_file_normals.c_str(), "rb");
+	if(!f) RETURN("Error normals\n")
+	
+	int n; 
+	fread_unlocked(&n, sizeof(int), 1, f);
+
+	normals.resize(n);
+			
+	for (size_t i = 0; i < n; i++)
+	{
+		for (size_t j = 0; j < 4; j++)
+		{						
+			fread_unlocked(normals[i].n[j].data(), sizeof(Type), 3, f);			
+		}
+	}	
+	fclose(f);
+
+	return 0;
+}
+
+Type NormIllum(const std::vector<Type>& Illum, const std::vector<Type>& Illum2) {
+	Type max = -1;
+	Type buf;
+	for (size_t i = 0; i < Illum.size(); i++)
+	{
+		buf = fabs(Illum[i] - Illum2[i]);
+		if (buf > max)
+			max = buf;
+	}
+	return max;
+}
+
+int ReadGraph(const std::string name_file_graph, std::vector<int>& sorted_id_cell) {
+	ifstream ifile;
+	ifile.open(name_file_graph);
+	if (!ifile.is_open()) {
+		std::cout << "Error open file\n";
+		std::cout << "file_graph is not opened for reading\n";
+		return 1;
+	}
+
+	int i;
+	int count = 0;
+	while (ifile >> i) {
+		sorted_id_cell[count++] = i;
+	}
+	ifile.close();
+	return 0;
+}
+int ReadGraphBin(const std::string name_file_graph, std::vector<int>& sorted_id_cell) {
+
+	std::unique_ptr<FILE, int(*)(FILE*)> file_graph(fopen(name_file_graph.c_str(), "rb"), fclose);
+	if (!file_graph) { printf("file_graph is not opened for writing\n"); return 1; }
+
+	const int n = sorted_id_cell.size();
+	fread_unlocked(sorted_id_cell.data(), sizeof(int), n, file_graph.get());
+
+	fclose(file_graph.get());
+	return 0;
+}
+
+int FindInAndOutFaces(const Vector3& direction, const int number_cell, const std::vector<Normals>& normals, int* face_state) {
+	//face_state  -0=> выходящая грань,  1=> входящая  face_state.size=4!!!  
+
+	Vector3 normal;
+
+	for (size_t i = 0; i < 4; ++i) {
+
+		normal = normals[number_cell].n[i];
+
+		if (normal.dot(direction) < -eps)
+			face_state[i] = 1;
+		else
+			face_state[i] = 0;  // если грань параллельна, считаем, что она не является определяющей
+
+	}
+
+	return 0;
+}
+
+
+int FromGlobalToLocalTetra(const Eigen::Matrix4d& vertex_tetra, const Eigen::Vector3d& global_coord, Eigen::Vector3d& local_coord)
+{
+	// vertex_tetra -> [X;Y;Z;1]
+	// возможно надо будет использовать transpose из-за инициализации матрицы перехода
+
+	Eigen::Matrix4d vertex_tetra_inverse = vertex_tetra.inverse();
+	// сразу с транспонированием
+	for (int i = 0; i < 3; ++i)
+	{
+		local_coord[i] = 0;
+		for (int j = 0; j < 3; ++j)
+			local_coord[i] += vertex_tetra_inverse(i, j) * global_coord[j];
+		local_coord[i] += vertex_tetra_inverse(i, 3);
+	}
+
+	//local_coord = vertex_tetra * global_coord;
+	return 0;
+}
+int FromLocalToGlobalTetra(const Eigen::Matrix4d& vertex_tetra, const Eigen::Vector3d& local_coord, Eigen::Vector3d& global_coord) {
+	// vertex_tetra -> [X,Y,Z,1]
+	// написать в ручную т.к. преобразования известны, и 4я строка постоянна и меняться не должна
+
+	Type eta4 = 1 - local_coord[0] - local_coord[1] - local_coord[2];
+	for (int i = 0; i < 3; ++i)
+	{
+		global_coord[i] = 0;
+		for (int j = 0; j < 3; ++j)
+			global_coord[i] += vertex_tetra(i, j) * local_coord[j];
+		global_coord[i] += vertex_tetra(i, 3) * eta4;
+	}
+
+	//global_coord = vertex_tetra.inverse() * local_coord;
+
+	return 0;
+}
+
+int FromTetraToPlane(const Eigen::Matrix3d& transform_matrix, const Eigen::Vector3d& start_point, const Eigen::Vector3d& tetra_coord, Eigen::Vector3d& plane_coord) {
+	plane_coord = transform_matrix * (tetra_coord - start_point);
+	return 0;
+}
+int FromPlaneToTetra(const Eigen::Matrix3d& inverse_transform_matrix, const Eigen::Vector3d& start_point, const Eigen::Vector3d& plane_coord,
+	Eigen::Vector3d& tetra_coord) {
+	tetra_coord = inverse_transform_matrix * plane_coord + start_point;
+	return 0;
+}
+
+
+size_t SetBasis(const Type* start_point, Vector3& normal, Matrix3& basis) {
+	/*по начальной точке и нормале строит локальный базис картинной плоскости (vec1, vec2).
+	  нормаль дана. задаем один вектор произвольно(ортагонально normal). третий вектор из векторного произведения*/
+	Vector3 vec_1;
+	Vector3 vec_2;
+
+	if (abs(normal[1]) < 1e-20) {
+		vec_1[0] = 0;
+		vec_1[1] = 1;
+		vec_1[2] = 0;
+	}
+	else {
+		vec_1[0] = 1;
+		vec_1[2] = 0;
+		vec_1[1] = -(normal[0] * vec_1[0] + normal[2] * vec_1[2]) / normal[1];  //св-во скалярного произведения (N, vec1)==0
+	}
+
+	// правельная ориентация базиса плоскости
+	if (normal[1] < 0)
+		for (int i = 0; i < 3; ++i)
+			vec_1[i] *= -1;
+
+	// обычное векторное умножение. Eigen временно и не нужен!!!
+	Eigen::Vector3d c = normal.cross(vec_1);
+
+	for (size_t i = 0; i < 3; ++i)
+		vec_2[i] = -c(i);
+
+	vec_1.normalize();
+	vec_2.normalize();
+
+	basis.row(0) = vec_1;
+	basis.row(1) = vec_2;
+	basis.row(2) = normal;
+
+	return 0;
+}
+size_t Make2dPoint(const Type* start, const Matrix3& local_basis, const Type* point, Vector3& new_point) {
+
+
+
+	for (size_t i = 0; i < 3; i++)
+		new_point[i] = 0;
+
+	//перевод 3d точки в 2d (в локальном базисе {start, local_basis}) 
+	for (size_t k = 0; k < 3; k++) {
+		new_point[0] += (point[k] - start[k]) * local_basis(0, k);
+		new_point[1] += (point[k] - start[k]) * local_basis(1, k);
+	}
+	return 0;
+}
+
 Type BoundaryFunction(const int id_cell, const Vector3& x, const Vector3& direction, const std::vector<Type>& illum_old,
 	const vector<Type>& directions, const vector<Type>& squares) {
 	//Type betta = 0.5;
@@ -698,88 +824,7 @@ Type IntegarteDirection(const int num_cell, const vector<Type>& Illum, const vec
 	return res / scuare_surface;
 }
 
-size_t WriteFileSolution(const std::string name_file_out, const std::vector<Type>& vector_illum, const std::vector<Type>& vector_energy,
-	 vtkSmartPointer<vtkUnstructuredGrid>& u_grid) {
 
-	int n = u_grid->GetNumberOfCells();
-
-	vtkSmartPointer<vtkDoubleArray> IllumArray =
-		vtkSmartPointer<vtkDoubleArray>::New();
-
-	vtkSmartPointer<vtkDoubleArray> EnergyArray =
-		vtkSmartPointer<vtkDoubleArray>::New();
-
-	for (size_t i = 0; i < n; i++) {
-		EnergyArray->InsertNextTuple1(vector_energy[i]);
-		IllumArray->InsertNextTuple1(vector_illum[i]);  // по первому направлению
-	}
-
-	EnergyArray->SetName("energy");
-	u_grid->GetCellData()->AddArray(EnergyArray);
-	
-	IllumArray->SetName("illum");
-	u_grid->GetCellData()->AddArray(IllumArray);
-
-
-	vtkSmartPointer<vtkGenericDataObjectWriter> writer =
-		vtkSmartPointer<vtkGenericDataObjectWriter>::New();
-	writer->SetFileName(name_file_out.c_str());
-	writer->SetInputData(u_grid);
-	writer->Write();
-	return 0;
-}
-
-size_t SetBasis(const Type* start_point, Vector3& normal, Eigen::Matrix3d& basis) {
-	/*по начальной точке и нормале строит локальный базис картинной плоскости (vec1, vec2).
-	  нормаль дана. задаем один вектор произвольно(ортагонально normal). третий вектор из векторного произведения*/
-	Vector3 vec_1;
-	Vector3 vec_2;
-
-	if (abs(normal[1]) < 1e-20) {
-		vec_1[0] = 0;
-		vec_1[1] = 1;
-		vec_1[2] = 0;
-	}
-	else {
-		vec_1[0] = 1;
-		vec_1[2] = 0;
-		vec_1[1] = -(normal[0] * vec_1[0] + normal[2] * vec_1[2]) / normal[1];  //св-во скалярного произведения (N, vec1)==0
-	}
-
-	// правельная ориентация базиса плоскости
-	if (normal[1] < 0)
-		for (int i = 0; i < 3; ++i)
-			vec_1[i] *= -1;
-
-	// обычное векторное умножение. Eigen временно и не нужен!!!
-	Eigen::Vector3d c = normal.cross(vec_1);
-
-	for (size_t i = 0; i < 3; ++i)
-		vec_2[i] = -c(i);
-
-	vec_1.normalize();
-	vec_2.normalize();
-
-	basis.row(0) = vec_1;
-	basis.row(1) = vec_2;
-	basis.row(2) = normal;
-
-	return 0;
-}
-size_t Make2dPoint(const Type* start, const Eigen::Matrix3d& local_basis, const Type* point, Vector3& new_point) {
-
-
-
-	for (size_t i = 0; i < 3; i++)
-		new_point[i] = 0;
-
-	//перевод 3d точки в 2d (в локальном базисе {start, local_basis}) 
-	for (size_t k = 0; k < 3; k++) {
-		new_point[0] += (point[k] - start[k]) * local_basis(0, k);
-		new_point[1] += (point[k] - start[k]) * local_basis(1, k);
-	}
-	return 0;
-}
 int IntersectionWithPlane(const Face& face, const Vector3& start_point, const Vector3& direction, Vector3& result) {
 
 	//вершины треугольника
@@ -858,70 +903,109 @@ int ReadCellFaces(const std::string name_file_cells, std::vector<Face>& grid) {
 	return 0;
 }
 
-int WriteCellFaces(const std::string name_file_cells, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid) {
+int ReadIdPairs(const std::string name_file_pairs, std::vector<int>& all_pairs_face) {
 
 	FILE* f;
-	f = fopen(name_file_cells.c_str(), "wb");
+	f = fopen(name_file_pairs.c_str(), "rb");
+	if (!f) printf("id_neighbors not open\n");
 
-	//Type A[3];
-	//Type B[3];
-	//Type C[3];
-	vtkPoints* points_face;
-	std::vector<Type>pp(9);
-
-	const int n = unstructured_grid->GetNumberOfCells();
-	fwrite_unlocked(&n, sizeof(int), 1, f);
-
-	for (size_t i = 0; i < n; i++) {
-		for (size_t j = 0; j < 4; j++) {
-			points_face = unstructured_grid->GetCell(i)->GetFace(j)->GetPoints();
-
-			points_face->GetPoint(0, pp.data());
-			points_face->GetPoint(1, pp.data() + 3);
-			points_face->GetPoint(2, pp.data() + 6);
-
-			fwrite_unlocked(pp.data(), sizeof(Type), 9, f);
-
-		}
-
-	}
+	int n;
+	fread_unlocked(&n, sizeof(int), 1, f);
+	all_pairs_face.resize(n);
+	fread_unlocked(all_pairs_face.data(), sizeof(int), n, f);
 
 	fclose(f);
-
 	return 0;
 }
 
-int WriteVertex(const std::string name_file_vertex, const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid) {
+int WriteSize(const std::string& name_file_size) {
 
-	FILE* f;
-	f = fopen(name_file_vertex.c_str(), "wb");
+	std::ofstream ofile2(name_file_size, std::ios::app);
 
-	const int n = unstructured_grid->GetNumberOfCells();
-	fwrite_unlocked(&n, sizeof(int), 1, f);
-	Eigen::Matrix4d vertex_tetra;
+	ofile2 << posX << '\n';
+	ofile2 << posX0 << '\n';
+	ofile2 << posOutC << '\n';
+	ofile2 << posOut << '\n';
+	ofile2 << posIn << '\n';
+	ofile2 << posS << '\n';
+	ofile2 << posRes << '\n';
+	/*
+		X=3a
+		x0
+		OutC=N*M
+		out=3a
+		In=3a
+		S=3a
+		Res??
+	*/
 
-	for (size_t i = 0; i < n; i++) {
-		SetVertexMatrix(i, unstructured_grid, vertex_tetra);
-		fwrite_unlocked(vertex_tetra.data(), sizeof(Eigen::Matrix4d), 1, f);
-	}
-	fclose(f);
-
-	return 0;
+	ofile2.close();
 }
 int ReadVertex(const std::string name_file_vertex, std::vector<Eigen::Matrix4d>& vertexs) {
 
 	FILE* f;
-	f = fopen(name_file_vertex.c_str(), "wb");
+	f = fopen(name_file_vertex.c_str(), "rb");
 
 	int n;
 	fread_unlocked(&n, sizeof(int), 1, f);
 	vertexs.resize(n);
 	Eigen::Matrix4d vertex_tetra;
 
-	for (size_t i = 0; i < n; i++) {		
+	for (size_t i = 0; i < n; i++) {
 		fread_unlocked(vertexs[i].data(), sizeof(Eigen::Matrix4d), 1, f);
 	}
 	fclose(f);
+
+	return 0;
+}
+size_t IntersectionWithPlaneDisk(const Vector3& X0, const Vector3& n, Vector3& res) {
+
+	//  ----------полный расчет. Т.к. диск задается постоянной плоскостью, параметры можно задатб явно--------------
+	/*
+	 {
+	std::vector<Vector3> curface(3);		 // точки задающие плоскость диска
+			curface[0][0] = 1;
+			curface[0][1] = 0;
+			curface[0][2] = 0;
+
+			curface[1][0] = 0;//0;
+			curface[1][1] = 0.9928768384869221;//
+			curface[1][2] = 0.11914522061843064;//;
+
+			curface[2][0] = 2;//;
+			curface[2][1] = 0;
+			curface[2][2] = 0;// ;   // Wolfram
+			}
+
+	* const std::vector<Vector3>& face,
+	Vector3 A = face[0];
+	Vector3 B = face[1];
+	Vector3 C = face[2];
+
+	Type a = A[1] * (B[2] - C[2]) + B[1] * (C[2] - A[2]) + C[1] * (A[2] - B[2]);
+	Type b = A[0] * (C[2] - B[2]) + B[0] * (A[2] - C[2]) + C[0] * (B[2] - A[2]);
+	Type c = A[0] * (B[1] - C[1]) + B[0] * (C[1] - A[1]) + C[0] * (A[1] - B[1]);
+	Type d = A[0] * (C[1] * B[2] - B[1] * C[2]) + B[0] * (A[1] * C[2] - C[1] * A[2]) + C[0] * (B[1] * A[2] - A[1] * B[2]);
+
+	Type t = -(a * X0[0] + b * X0[1] + c * X0[2] + d) / (a * n[0] + b * n[1] + c * n[2]);
+	*/
+
+	/*
+	a= 0
+	b= 0.1191452206184306
+	c= -0.9928768384869221
+	d= 0
+	*/
+
+	const Type b = 0.1191452206184306;
+	const Type c = -0.9928768384869221;
+
+	const Type t = -(b * X0[1] + c * X0[2]) / (b * n[1] + c * n[2]);
+
+	res = (t * n + X0);
+
+	/*for (size_t i = 0; i < 3; i++)
+		res[i] = (n[i] * t + X0[i]);*/
 
 	return 0;
 }

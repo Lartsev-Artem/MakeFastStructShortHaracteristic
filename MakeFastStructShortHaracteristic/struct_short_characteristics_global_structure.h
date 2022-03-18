@@ -4,12 +4,13 @@
 
 #include "struct_short_characteristics_headers.h"
 
-#define USE_VTK
+#define RETURN(a) { printf(a); return 1; }
 
 #ifdef _MSC_VER
 #define fwrite_unlocked _fwrite_nolock
 #define fread_unlocked  _fread_nolock
 #endif
+//#define fopen fopen_s
 
 typedef uint8_t ShortId;
 typedef double Type;
@@ -48,10 +49,9 @@ struct FaceCell {
 
 struct Normals {
 	std::vector<Vector3> n;
-	Normals() {
-	}
 
-	Normals(const int size) {
+
+	Normals(const int size=4) {
 		n.resize(size);
 	}
 };
@@ -83,11 +83,12 @@ extern Matrix3 inclined_face;  // 3 узла интерполяции на наклонной плоскости
 extern const Vector3 center_point;
 extern const Type inner_radius;
 
+#ifdef USE_VTK
 // скалярные данные сетки (unstructured_grid)
 extern vtkDataArray* density;
 extern vtkDataArray* absorp_coef;
 extern vtkDataArray* rad_en_loose_rate;
-
+#endif
 extern Type square_surface;  // площадь поверхности дискретной 
 
 extern Vector3 center_local_sphere;  // центр описанной сферы около стандартного тетраэдра
@@ -95,15 +96,12 @@ extern Vector3 center_local_sphere;  // центр описанной сферы около стандартного
 extern int num_cur_direction; // номер текущего направления
 extern Vector3 cur_direction;
 
-extern int count_negative_interpolation; // число отрицательных значений интерполяции интесивности
-
 
 // параметры диска и внутренней сферы:
 const Type Rsphere = 0.1;
 const Type R1disk = 0.1;
 const Type R2disk = 0.2;
 
-extern std::vector<Type> res_inner_bound;  // значение на внутренней границе
 extern std::vector<Vector3> x_try_surface;
 extern std::vector<int> id_try_surface;
 

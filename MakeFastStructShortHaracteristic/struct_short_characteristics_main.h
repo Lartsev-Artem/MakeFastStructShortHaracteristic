@@ -9,7 +9,7 @@
 
 template<typename Type>
 size_t ReadStartSettings(Type name_file_settings, std::string& name_file_vtk,
-	std::string& name_file_sphere_direction, std::string& out_file_grid_vtk, std::string& name_file_graph, std::string& file_normals) {
+	std::string& name_file_sphere_direction, std::string& out_file_grid_vtk, std::string& main_dir) {
 
 	std::ifstream ifile;
 	ifile.open(name_file_settings);
@@ -23,12 +23,24 @@ size_t ReadStartSettings(Type name_file_settings, std::string& name_file_vtk,
 	getline(ifile, name_file_vtk);
 	getline(ifile, name_file_sphere_direction);
 	getline(ifile, out_file_grid_vtk);
-	getline(ifile, name_file_graph);
-	getline(ifile, file_normals);
+	getline(ifile, main_dir);
 
 	ifile.close();
 	return 0;
 }
 
+template <typename T>
+int ReadBinGeneralFile(const std::string& name_file, const std::vector<T>& data) {
 
+	FILE* f;
+	f = fopen(name_file.c_str(), "rb");
+	if (!f) RETURN("ReadBinGeneralFile not open\n")
+		int n;
+	fread_unlocked(&n, sizeof(int), 1, f);
+	data.resize(n);
+	fread_unlocked(data.data(), sizeof(T), n, f);
+	fclose(f);
+
+	return 0;
+}
 #endif

@@ -17,6 +17,10 @@
 #include <string>
 #include <vector>
 
+//#define ReadNow
+#define USE_VTK
+
+#ifdef USE_VTK
 
 #include <vtk-9.0\vtkCellArray.h>
 #include <vtk-9.0\vtkCellData.h>
@@ -39,6 +43,8 @@
 #include <vtk-9.0\vtkTriangle.h>
 #include <vtk-9.0\vtkUnsignedCharArray.h>
 #include <vtk-9.0\vtkUnstructuredGrid.h>
+
+#endif // USE_VTK
 
 #include <eigen3/Eigen/Dense>
 
