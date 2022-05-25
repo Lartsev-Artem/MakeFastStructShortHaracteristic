@@ -54,6 +54,11 @@ size_t ReadFileVtk(const size_t class_file_vtk, const std::string name_file_vtk,
 }
 int FindNeighborsPairFaceAndBoundaries(const vtkSmartPointer<vtkUnstructuredGrid>& unstructured_grid, std::vector<int>& all_pairs_face) {
 
+#if 1 //Cone
+	std::vector<Normals> normals;
+	ReadNormalFile(BASE_ADRESS + "normals.bin", normals);
+#endif
+
 	int count_unique_face = 0;
 	const int N = unstructured_grid->GetNumberOfCells();
 
@@ -75,7 +80,7 @@ int FindNeighborsPairFaceAndBoundaries(const vtkSmartPointer<vtkUnstructuredGrid
 			id_c = idp->GetId(2);
 
 			/*ћожет быть проблема с указател€ми на списки!*/
-			unstructured_grid->GetCellNeighbors(num_cell, idp, idc);
+			unstructured_grid->GetCellNeighbors(num_cell, idp, idc);		
 
 			if (idc->GetNumberOfIds() == 1) {
 				int id_neighbor_cell = idc->GetId(0);
@@ -83,13 +88,23 @@ int FindNeighborsPairFaceAndBoundaries(const vtkSmartPointer<vtkUnstructuredGrid
 				all_pairs_face[num_cell * 4 + num_face] = id_neighbor_cell * 4 + id_neighbor_face;
 				all_pairs_face[id_neighbor_cell * 4 + id_neighbor_face] = num_cell * 4 + num_face;
 			}
-			else if (idc->GetNumberOfIds() == 0) { // гранична€ €чейка
+			else if (idc->GetNumberOfIds() == 0)  // гранична€ €чейка
+			{
 
 				Vector3 P(unstructured_grid->GetPoint(id_a));
+#if 1 //Cone
+				//if (P[0] > inner_radius)  //x>R
+				if ((normals[num_cell].n[num_face] - Vector3(-1, 0, 0)).norm() > 1e-3) // излучающее дно			
+					all_pairs_face[num_cell * 4 + num_face] = -1; // внешн€€ поверхность
+				else
+					all_pairs_face[num_cell * 4 + num_face] = -3; // источник	
+#endif
+#if Shere
 				if ((P - center_point).norm() > inner_radius)
 					all_pairs_face[num_cell * 4 + num_face] = -1; // внешн€€ сфера
 				else
-					all_pairs_face[num_cell * 4 + num_face] = -2; // внутренн€€ сфера				
+					all_pairs_face[num_cell * 4 + num_face] = -2; // внутренн€€ сфера		
+#endif
 			}
 			else
 				std::cout << "More than 1 neighbor????\n";
@@ -99,6 +114,7 @@ int FindNeighborsPairFaceAndBoundaries(const vtkSmartPointer<vtkUnstructuredGrid
 
 	return count_unique_face;
 }
+
 int GetNumberNeighborFace(const int a, const int b, const int c, vtkCell* neighbor_cell) {
 
 	vtkIdList* idc;
@@ -132,8 +148,10 @@ int WriteCellFaces(const std::string name_file_cells, const vtkSmartPointer<vtkU
 	vtkPoints* points_face;
 	std::vector<Type>pp(9);
 
-	const int n = unstructured_grid->GetNumberOfCells();
+	int n = unstructured_grid->GetNumberOfCells();
 	fwrite_unlocked(&n, sizeof(int), 1, f);
+
+	//std::vector<Vector3>centers_face(n * 4);
 
 	for (size_t i = 0; i < n; i++) {
 		for (size_t j = 0; j < 4; j++) {
@@ -143,6 +161,8 @@ int WriteCellFaces(const std::string name_file_cells, const vtkSmartPointer<vtkU
 			points_face->GetPoint(1, pp.data() + 3);
 			points_face->GetPoint(2, pp.data() + 6);
 
+			//centers_face[i*4+j] = Vector3((pp[0]+pp[3]+pp[6])/3, (pp[1] + pp[4] + pp[7]) / 3, (pp[2] + pp[5] + pp[8]) / 3 );
+
 			fwrite_unlocked(pp.data(), sizeof(Type), 9, f);
 
 		}
@@ -150,6 +170,12 @@ int WriteCellFaces(const std::string name_file_cells, const vtkSmartPointer<vtkU
 	}
 
 	fclose(f);
+
+	/*f = fopen((name_file_cells + "face_center.bin").c_str(), "wb"); 
+	n *= 4;
+	fwrite_unlocked(&n, sizeof(int), 1, f);
+	fwrite_unlocked(centers_face.data(), sizeof(Vector3), centers_face.size(), f);
+	fclose(f);*/
 
 	return 0;
 }

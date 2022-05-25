@@ -393,6 +393,10 @@ Type CalculateIllumeOnInnerFace(const int num_cell, const int num_in_face, const
 		/*√раничные услови€*/
 		return I_x0;
 	}
+	else if (nodes_value[num_cell].neighbours_id_face[num_in_face] == -3) // граница основани€ конуса
+	{
+		return I_x0;
+	}
 	else if (nodes_value[num_cell].neighbours_id_face[num_in_face] == -2) {
 		// внутренн€€ граница (//пересечение с диском / сферой)		
 		pos_x_try++;

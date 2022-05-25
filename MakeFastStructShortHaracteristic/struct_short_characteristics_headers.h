@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <inttypes.h>
 #include <memory>
-#include< stdio.h >
+#include <stdio.h>
 
 
 #include <algorithm>
@@ -17,8 +17,9 @@
 #include <string>
 #include <vector>
 
-//#define ReadNow
-#define USE_VTK
+//#define ReadNow  // при выполнение чиатать данные из файла по мере использования данных. (Для экономии ОЗУ)
+
+#define USE_VTK  // построить данные сетки
 
 #ifdef USE_VTK
 

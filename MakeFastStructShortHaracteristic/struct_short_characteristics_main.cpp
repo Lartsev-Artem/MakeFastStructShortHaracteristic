@@ -36,9 +36,11 @@ int posRes;
 //const Vector3 center_point(0, 0, 0);
 //const Type inner_radius =  0.51; // радиус внутренней сферы (с запасом)
 
-const Vector3 center_point(1, 0, 0);
-const Type inner_radius = 0.12; // радиус внутренней сферы (с запасом)
+//const Vector3 center_point(1, 0, 0);
+//const Type inner_radius = 0.12; // радиус внутренней сферы (с запасом)
 
+const Vector3 center_point(10, 0, 0);
+const Type inner_radius = 0.06; // радиус внутренней сферы (с запасом)
 
 int main(int argc, char* argv[])
 {
@@ -116,29 +118,27 @@ int main(int argc, char* argv[])
 
 	vector<Vector3> directions;
 	vector<Type> squares;
-
-	vector<int> sorted_id_cell; // ”пор€доченные индексы €чеек по данному направлению
+	
 	_clock = -omp_get_wtime();
 	{
 		std::vector<int> all_pairs_face;
 		ReadIdPairs(name_file_pairs, all_pairs_face);
 		InitNodesValue(all_pairs_face, nodes_value);
 		all_pairs_face.clear();
-		
-		ReadCellFaces(name_file_cells, grid);
-		ReadVertex(name_file_vertex, vertexs);
-		ReadNormalFile(name_file_normals, normals);
-		
-		if(ReadSphereDirectionDecartToSpherical(name_file_sphere_direction, directions, squares, square_surface)) return 1;		
 
+		if (ReadCellFaces(name_file_cells, grid)) return 1;
+		if (ReadVertex(name_file_vertex, vertexs)) return 1;
+		if (ReadNormalFile(name_file_normals, normals)) return 1;
+
+		if (ReadSphereDirectionDecartToSpherical(name_file_sphere_direction, directions, squares, square_surface)) return 1;
 	}
 	_clock += omp_get_wtime();
-	std::cout << "\n Reading time of the sphere_direction file: " << _clock << "\n";
+	std::cout << "\nReading time of the sphere_direction file: " << _clock << "\n";
 
 	const int count_cells = vertexs.size();
 	const int count_directions = directions.size();
 
-	sorted_id_cell.resize(count_cells * count_directions);
+	vector<int> sorted_id_cell(count_cells * count_directions); // ”пор€доченные индексы €чеек по данному направлению
 
 	FILE* f;
 	f = fopen(name_file_graph.c_str(), "rb");
@@ -172,7 +172,7 @@ int main(int argc, char* argv[])
 	InitGlobalValue(start_point_plane_coord, transform_matrix, inverse_transform_matrix, straight_face, inclined_face);
 
 	std::ofstream ofile;
-	ofile.open(BASE_ADRESS + "File_with_Logs.txt");
+	ofile.open(BASE_ADRESS + "File_Make_Logs.txt");
 
 	posX = 0;
 	posX0 = 0;
@@ -319,6 +319,7 @@ int main(int argc, char* argv[])
 			fwrite_unlocked(&shift_x0, sizeof(int), 1, file_shift_x0); shift_x0 = posX0;
 
 			printf("End direction number #%d\n", num_direction);
+			ofile << "End direction number #" << num_direction << '\n';
 		}
 		/*---------------------------------- конец FOR по направлени€м----------------------------------*/
 
